@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  BarChart3, BookOpen, FileSpreadsheet, LayoutDashboard, LogOut,
+  BarChart3, BookOpen, BookUser, FileSpreadsheet, LayoutDashboard, LogOut,
   ScrollText, ShieldCheck, Users, UserCog,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui';
 
 const META: Array<{ chemin: string; libelle: string; icone: React.ReactNode }> = [
   { chemin: '/', libelle: 'menu.tableauDeBord', icone: <LayoutDashboard size={18} /> },
+  { chemin: '/annuaire', libelle: 'menu.annuaire', icone: <BookUser size={18} /> },
   { chemin: '/effectifs', libelle: 'menu.effectifs', icone: <Users size={18} /> },
   { chemin: '/referentiels', libelle: 'menu.referentiels', icone: <BookOpen size={18} /> },
   { chemin: '/utilisateurs', libelle: 'menu.utilisateurs', icone: <UserCog size={18} /> },

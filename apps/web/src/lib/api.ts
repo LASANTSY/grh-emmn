@@ -1,8 +1,8 @@
 import { http, telecharger } from './http';
 import type {
-  AnalyseImport, Base, CompteMe, DemandeModification, EntreeAudit, FinDeLienAlerte,
-  Grade, ImportHistorique, LoginResponse, ResultatsPage, PersonnelLigne, Specialite,
-  Unite, Utilisateur,
+  AnalyseImport, Base, BaseEffectif, CompteMe, ComparaisonResult, DemandeModification, DonneeBar,
+  EntreeAudit, FinDeLienAlerte, Grade, ImportHistorique, LoginResponse, ResultatsPage, PersonnelLigne,
+  Specialite, Unite, Utilisateur,
 } from './types';
 
 export const { http: rawHttp } = { http }; // passthrough générique
@@ -28,11 +28,13 @@ export const api = {
   personnel: {
     rechercher: (params: Record<string, string | number | boolean | undefined | null>) =>
       http<ResultatsPage<PersonnelLigne>>('/personnel/rechercher', { query: params }),
+    annuaire: (params: Record<string, string | number | boolean | undefined | null>) =>
+      http<ResultatsPage<PersonnelLigne>>('/personnel/annuaire', { query: params }),
     detail: (id: string) => http<any>(`/personnel/${id}`),
     creer: (body: unknown) => http<{ id: string; identifiant?: string; motDePasseProvisoire?: string }>('/personnel', { method: 'POST', body }),
     modifier: (id: string, body: unknown) => http<void>(`/personnel/${id}`, { method: 'PATCH', body }),
     supprimer: (id: string) => http<void>(`/personnel/${id}`, { method: 'DELETE' }),
-    doublons: () => http<Record<string, unknown>[]>('/personnel/doublons'),
+    doublons: () => http<Record<string, unknown>[]>(`/personnel/doublons`),
     finDeLien: (statut: 'DANS_1_AN' | 'DANS_2_ANS' | 'RETRAITE') =>
       http<FinDeLienAlerte[]>(`/personnel/fin-de-lien?statut=${statut}`),
   },
@@ -89,12 +91,23 @@ export const api = {
   rapports: {
     excel: () => telecharger('/rapports/personnel-excel', 'effectifs_personnel.xlsx'),
     pdf: () => telecharger('/rapports/effectifs-pdf', 'rapport_effectifs.pdf'),
+    classementGradePdf: (params?: Record<string, string>) =>
+      telecharger(`/rapports/classement-grade-pdf?${new URLSearchParams(params ?? {}).toString()}`, 'classement_par_grade.pdf'),
+    classementGradeExcel: () => telecharger('/rapports/classement-grade-excel', 'classement_par_grade.xlsx'),
+    personnelUniteExcel: () => telecharger('/rapports/personnel-unite-excel', 'personnel_par_unite.xlsx'),
+    fichePersonnelPdf: (id: string) => telecharger(`/rapports/fiche-personnel-pdf/${id}`, `fiche_${id}.pdf`),
   },
 
   dashboard: {
     synthese: () => http<any>('/dashboard/synthese'),
     parBase: () => http<any[]>('/dashboard/par-base'),
-    pyramide: () => http<any[]>('/dashboard/pyramide'),
-    evolution: () => http<any[]>('/dashboard/evolution'),
+    parBaseHierarchique: () => http<BaseEffectif[]>('/dashboard/par-base-hierarchique'),
+    categories: () => http<{ categorie: string; effectif: number }[]>('/dashboard/categories'),
+    genres: () => http<{ sexe: string; effectif: number }[]>('/dashboard/genres'),
+    retraitesParAnnee: () => http<{ annee: number; effectif: number }[]>('/dashboard/retraites-par-annee'),
+    comparaison: (params: Record<string, string | number | undefined | null>) =>
+      http<ComparaisonResult>('/dashboard/comparaison', { query: params }),
+    pyramide: () => http<DonneeBar[]>('/dashboard/pyramide'),
+    evolution: () => http<{ annee: number; effectif: number }[]>('/dashboard/evolution'),
   },
 };

@@ -148,6 +148,7 @@ export interface ImportHistorique {
 export interface AnalyseLigne {
   numeroLigne: number;
   erreursGroupees: string[];
+  avertissements?: string[];
   apercu: Record<string, string>;
 }
 
@@ -157,4 +158,35 @@ export interface AnalyseImport {
   valides: number;
   avecErreurs: number;
   lignes: AnalyseLigne[];
+}
+
+export interface UniteEffectif {
+  uniteId: string;
+  unite: string;
+  effectif: number;
+}
+
+export interface BaseEffectif {
+  baseId: string;
+  base: string;
+  effectif: number;
+  unites: UniteEffectif[];
+}
+
+export interface DonneeBar {
+  tranche: string;
+  homme: number;
+  femme: number;
+}
+
+export interface ComparaisonBloc {
+  cat: Record<string, number>;
+  spe: Record<string, number>;
+  genres: Record<string, number>;
+  libelle?: string;
+}
+
+export interface ComparaisonResult {
+  selection: ComparaisonBloc;
+  ensemble: ComparaisonBloc;
 }

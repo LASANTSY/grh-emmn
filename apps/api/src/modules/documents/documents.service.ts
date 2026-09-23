@@ -151,6 +151,39 @@ export class DocumentsService {
     return { buffer, nomOriginal: version.nomOriginal, mimeType: version.mimeType };
   }
 
+  /** Télécharger / prévisualiser une version précise (historique §2.2j). */
+  async telechargerVersion(versionId: string, user: RequestUser, apercu: boolean): Promise<{
+    buffer: Buffer;
+    nomOriginal: string;
+    mimeType: string;
+  }> {
+    const version = await this.prisma.versionPieceJointe.findUnique({
+      where: { id: versionId },
+      include: {
+        pieceJointe: {
+          select: {
+            id: true,
+            personnelId: true,
+            personnel: { select: { id: true, uniteId: true, deletedAt: true } },
+          },
+        },
+      },
+    });
+    if (!version) throw AppError.notFound('VERSION_NOT_FOUND', 'Version de pièce jointe introuvable.');
+    await this.scope.verifierLecture(user, version.pieceJointe.personnel);
+    const buffer = await this.storage.get(version.fichier);
+    await this.audit.log({
+      compteId: user.compteId,
+      action: 'TELECHARGEMENT',
+      entite: 'PieceJointe',
+      entiteId: version.pieceJointe.id,
+      personnelId: version.pieceJointe.personnelId,
+      details: { apercu, version: versionId },
+      ip: null,
+    });
+    return { buffer, nomOriginal: version.nomOriginal, mimeType: version.mimeType };
+  }
+
   async ajouterVersion(id: string, fichier: FichierUpload, user: RequestUser): Promise<unknown> {
     await this.securiser(
       (await this.prisma.pieceJointe.findUnique({ where: { id } }))?.personnelId ?? '',

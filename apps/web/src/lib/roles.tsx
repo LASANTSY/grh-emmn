@@ -20,13 +20,13 @@ export function pagesPourRole(type: TypeCompte): string[] {
   switch (type) {
     case 'ADMIN_SYSTEME':
     case 'RH_ETAT_MAJOR':
-      return ['/', '/effectifs', '/referentiels', '/utilisateurs', '/demandes', '/audit', '/rapports'];
+      return ['/', '/annuaire', '/effectifs', '/referentiels', '/utilisateurs', '/demandes', '/audit', '/rapports'];
     case 'RH_BASE':
-      return ['/', '/effectifs', '/referentiels', '/demandes', '/audit'];
+      return ['/', '/annuaire', '/effectifs', '/referentiels', '/demandes', '/audit'];
     case 'CHEF_COMMANDEMENT':
-      return ['/', '/effectifs', '/demandes'];
+      return ['/', '/annuaire', '/effectifs', '/demandes'];
     case 'PERSONNEL':
     default:
-      return ['/demandes'];
+      return ['/', '/annuaire', '/demandes'];
   }
 }

@@ -33,14 +33,14 @@ export class DemandesController {
   }
 
   @Patch(':id/valider')
-  @Roles('RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT', 'ADMIN_SYSTEME')
+  @Roles('RH_ETAT_MAJOR', 'RH_BASE', 'ADMIN_SYSTEME')
   async valider(@Param('id') id: string, @Body() body: { commentaire?: string }, @CurrentUser() user: RequestUser): Promise<{ ok: true }> {
     await this.demandes.valider(id, user, body.commentaire);
     return { ok: true };
   }
 
   @Patch(':id/rejeter')
-  @Roles('RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT', 'ADMIN_SYSTEME')
+  @Roles('RH_ETAT_MAJOR', 'RH_BASE', 'ADMIN_SYSTEME')
   async rejeter(@Param('id') id: string, @Body() body: { motif?: string }, @CurrentUser() user: RequestUser): Promise<{ ok: true }> {
     await this.demandes.rejeter(id, body.motif ?? '', user);
     return { ok: true };

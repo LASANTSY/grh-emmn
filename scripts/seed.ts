@@ -97,6 +97,14 @@ async function main(): Promise<void> {
   const baseBana = await prisma.base.create({
     data: { nom: 'Base navale Antsiranana', ville: 'Antsiranana', code: 'BANA', ordre: 2 },
   });
+  const baseBima = await prisma.base.create({
+    data: {
+      nom: '2e BIMA — 2e Bataillon d\'Infanterie de la Marine',
+      ville: 'Antsiranana',
+      code: 'BIMA',
+      ordre: 3,
+    },
+  });
 
   const uniteEmmn = await prisma.unite.create({
     data: { nom: 'Emmn — Élement de la Marine (siège)', code: 'EEMM', ordre: 1, baseId: baseEmmn.id },
@@ -107,6 +115,18 @@ async function main(): Promise<void> {
   const uniteErren = await prisma.unite.create({
     data: { nom: 'EREN', code: 'EREN', ordre: 2, baseId: baseBana.id },
   });
+
+  // CDC §2.1 : unités du 2ème BIMA (Antsiranana).
+  const unitesBima = [
+    ['CCS', 'CCS'],
+    ['CIMA1', '1er CIMA'],
+    ['CIMA2', '2e CIMA'],
+    ['CIMA3', '3e CIMA'],
+    ['CCMA', 'CCMA'],
+  ];
+  for (const [i, [code, nom]] of unitesBima.entries()) {
+    await prisma.unite.create({ data: { nom, code, ordre: 40 + i, baseId: baseBima.id } });
+  }
 
   const unitesNavigantes = ['RC Trozona', 'PC Tselatra', 'PC Malaky', 'Direction du Port Militaire'];
   const unitesTerre = ['Unité Marine', 'CPS'];
@@ -210,6 +230,41 @@ async function main(): Promise<void> {
     role: 'RH_BASE',
     uniteId: uniteBana.id,
   });
+
+  // Effectifs du 2ème BIMA (CDC §2.1) pour illustrer la structure complète.
+  const uniteBima1 = await prisma.unite.findFirst({ where: { code: 'CIMA1', baseId: baseBima.id } });
+  const uniteBimaCcs = await prisma.unite.findFirst({ where: { code: 'CCS', baseId: baseBima.id } });
+  const personnelsBima = [
+    { mat: 'MSA/2012/090', nom: 'RANDRIANASOLO', prenoms: 'Hery Manana', sx: 'M', age: 38, grade: 'Maître', spe: 'Navigation maritime', sitFamiliale: 'Marié(e)', unite: uniteBima1! },
+    { mat: 'MSA/2017/150', nom: 'RAZAFIMAHATRATRA', prenoms: 'Mialy', sx: 'F', age: 32, grade: 'Second Maître de 1re classe', spe: 'Transmissions', sitFamiliale: 'Célibataire', unite: uniteBimaCcs! },
+  ];
+  for (const p of personnelsBima) {
+    const dateNaissance = new Date(`${new Date().getFullYear() - p.age}-05-20`);
+    const personnel = await prisma.personnel.create({
+      data: {
+        matriculeRecrutement: p.mat,
+        nom: p.nom,
+        prenoms: p.prenoms,
+        sexe: p.sx,
+        dateNaissance,
+        lieuNaissance: 'Antsiranana',
+        statutFamilial: p.sitFamiliale ?? null,
+        corps: p.grade.startsWith('Maître') || p.grade.startsWith('Second') ? 'Sous-officier' : 'Officier',
+        gradeId: grades.get(p.grade)!.id,
+        uniteId: p.unite.id,
+        specialiteId: specialites.get(p.spe)?.id ?? null,
+        situationMilitaire: 'EN_ACTIVITE',
+        dateEntreeService: new Date(`${2006 + p.age % 10}-03-01`),
+        niveauInstruction: 'BEPC',
+        numeroCIN: `${3030 + p.age}${String(40404040 + p.age)}`,
+      },
+    });
+    comptes.push({
+      personnelId: personnel.id,
+      identifiant: p.mat,
+      role: 'PERSONNEL',
+    });
+  }
 
   console.log('Création des comptes de démonstration…');
   const motDePasse = 'EmMn@2026!Demo';

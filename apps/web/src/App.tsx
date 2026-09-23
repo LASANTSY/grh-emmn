@@ -10,6 +10,7 @@ import { Utilisateurs } from '@/pages/utilisateurs';
 import { Demandes } from '@/pages/demandes';
 import { Audit } from '@/pages/audit';
 import { Impressions } from '@/pages/impressions';
+import { Annuaire } from '@/pages/annuaire';
 import { RequisRole } from '@/lib/roles';
 
 function RequisAuth({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ export default function App() {
         }
       >
         <Route index element={<TableauDeBord />} />
+        <Route path="annuaire" element={<Annuaire />} />
         <Route path="effectifs" element={<Effectifs />} />
         <Route path="personnel/:id" element={<FichePersonnel />} />
         <Route path="referentiels" element={<Referentiels />} />

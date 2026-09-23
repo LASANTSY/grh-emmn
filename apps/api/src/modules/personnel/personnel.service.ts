@@ -71,7 +71,9 @@ export interface RechercheParams {
   categorie?: string;
   situationMilitaire?: string;
   corps?: string;
+  dateNaissance?: string;
   finDeLien?: 'DANS_1_AN' | 'DANS_2_ANS' | 'RETRAITE';
+  retraiteAnnee?: string;
   page?: number;
   pageSize?: number;
   tri?: TriPersonnel;
@@ -130,6 +132,14 @@ export class PersonnelService {
     }
     if (params.corps) {
       andFilters.push({ corps: { contains: params.corps, mode: 'insensitive' } });
+    }
+    if (params.dateNaissance) {
+      const jour = this.parsableDate(params.dateNaissance);
+      if (jour) {
+        const debut = new Date(Date.UTC(jour[0], jour[1] - 1, jour[2]));
+        const fin = new Date(debut.getTime() + 86_400_000 - 1);
+        andFilters.push({ dateNaissance: { gte: debut, lte: fin } });
+      }
     }
     if (andFilters.length > 0) where.AND = andFilters;
 
@@ -214,24 +224,34 @@ export class PersonnelService {
 
     const total = await this.prisma.personnel.count({ where });
 
-    // Filtre mémoire sur fin de lien
+    // Filtre mémoire sur fin de lien / année de départ à la retraite
     let filtres = enrichis;
     if (params.finDeLien) {
       filtres = enrichis.filter((p) => p.finDeLien.statut === params.finDeLien);
     }
+    if (params.retraiteAnnee) {
+      const an = Number(params.retraiteAnnee);
+      if (!Number.isNaN(an)) {
+        filtres = enrichis.filter((p) => {
+          const d = p.finDeLien.dateFinDeLien;
+          return d ? new Date(d).getFullYear() === an : false;
+        });
+      }
+    }
+    const enMemoire = Boolean(params.finDeLien || params.retraiteAnnee);
 
-    // Pagination mémoire si filtre fin de lien appliqué
-    if (params.finDeLien) {
+    // Pagination mémoire si filtre calculé appliqué
+    if (enMemoire) {
       const debut = (page - 1) * pageSize;
       filtres = filtres.slice(debut, debut + pageSize);
     }
 
     return {
       items: filtres,
-      total: params.finDeLien ? filtres.length : total,
+      total: enMemoire ? filtres.length : total,
       page,
       pageSize,
-      totalPages: Math.ceil((params.finDeLien ? filtres.length : total) / pageSize),
+      totalPages: Math.ceil((enMemoire ? filtres.length : total) / pageSize),
     };
   }
 
@@ -520,6 +540,59 @@ export class PersonnelService {
   }
 
   // -------------------------------------------------------------------------
+  // Annuaire « vue publique limitée » (CDC §2.2i) : accessible au PERSONNEL.
+  // Seuls les champs non sensibles sont exposés (pas de CIN, adresse, décisions…).
+  // -------------------------------------------------------------------------
+  async annuaire(user: RequestUser, params: RechercheParams): Promise<unknown> {
+    const page = Math.max(1, Number(params.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(params.pageSize) || 30));
+    const where: Prisma.PersonnelWhereInput = { deletedAt: null };
+
+    const andFilters: Prisma.PersonnelWhereInput[] = [];
+    if (params.q) {
+      andFilters.push({
+        OR: [
+          { nom: { contains: params.q, mode: 'insensitive' } },
+          { prenoms: { contains: params.q, mode: 'insensitive' } },
+          { matriculeRecrutement: { contains: params.q, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (params.gradeId) andFilters.push({ gradeId: params.gradeId });
+    if (params.uniteId) andFilters.push({ uniteId: params.uniteId });
+    if (params.baseId) andFilters.push({ unite: { baseId: params.baseId } });
+    if (params.specialiteId) andFilters.push({ specialiteId: params.specialiteId });
+    if (andFilters.length > 0) where.AND = andFilters;
+
+    const [items, total] = await Promise.all([
+      this.prisma.personnel.findMany({
+        where,
+        select: {
+          id: true,
+          matriculeRecrutement: true,
+          nom: true,
+          prenoms: true,
+          sexe: true,
+          dateNaissance: true,
+          telephoneMobile: true,
+          email: true,
+          photo: true,
+          fonctionActuelle: true,
+          grade: { select: { libelle: true, categorie: true } },
+          unite: { select: { nom: true, base: { select: { nom: true } } } },
+          specialite: { select: { libelle: true } },
+        },
+        orderBy: { nom: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.personnel.count({ where }),
+    ]);
+    void user;
+    return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
+
+  // -------------------------------------------------------------------------
   // Doublons (CIN / matricule) — CDC §2.4, §2.5.5
   // -------------------------------------------------------------------------
   async doublons(): Promise<unknown[]> {
@@ -576,6 +649,18 @@ export class PersonnelService {
     if (user.perimetre.type === 'UNITE' && unite.id !== user.perimetre.uniteId) {
       throw AppError.forbidden('PERIMETRE_RESTREINT', "Cette unité est hors de votre périmètre.");
     }
+  }
+
+  /** Parse 'YYYY-MM-DD' ou 'JJ/MM/AAAA' → [année, mois, jour]. */
+  private parsableDate(texte: string): [number, number, number] | null {
+    const t = texte.trim();
+    const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+    const [a, b, c] = m.slice(1).map(Number);
+    const anne = m[0].includes('-') ? a : c;
+    const moi = m[0].includes('-') ? b : a;
+    const jour = m[0].includes('-') ? c : b;
+    return [anne, moi, jour];
   }
 
   private genererMotDePasse(): string {

@@ -121,4 +121,127 @@ export class DashboardService {
       return { annee, effectif: parAnnee[annee] ?? 0 };
     });
   }
+
+  /** Répartition hommes / femmes (camembert du CDC §2.3). */
+  async genres(user: RequestUser): Promise<unknown[]> {
+    const ou = await this.where(user);
+    const e = await this.effectifsPar({ ...ou, deletedAt: null });
+    return [
+      { sexe: 'M', effectif: e.genres.homme },
+      { sexe: 'F', effectif: e.genres.femme },
+    ];
+  }
+
+  /** Camembert par catégorie de grades (CDC §2.3). */
+  async repartitionCategories(user: RequestUser): Promise<unknown[]> {
+    const ou = await this.where(user);
+    const e = await this.effectifsPar({ ...ou, deletedAt: null });
+    return Object.entries(e.cat)
+      .map(([categorie, effectif]) => ({ categorie, effectif }))
+      .sort((a, b) => b.effectif - a.effectif);
+  }
+
+  /** Prévision des départs à la retraite par année (date fin de lien). */
+  async retraitesParAnnee(user: RequestUser): Promise<unknown[]> {
+    const ou = await this.where(user);
+    const rows = await this.prisma.personnel.findMany({
+      where: { ...ou, deletedAt: null },
+      select: { dateNaissance: true, grade: { select: { ageDepartRetraite: true } } },
+    });
+    const parAnnee: Record<number, number> = {};
+    for (const r of rows) {
+      if (!r.dateNaissance || !r.grade?.ageDepartRetraite) continue;
+      const dateFin = new Date(r.dateNaissance);
+      dateFin.setFullYear(dateFin.getFullYear() + r.grade.ageDepartRetraite);
+      const annee = dateFin.getFullYear();
+      parAnnee[annee] = (parAnnee[annee] ?? 0) + 1;
+    }
+    const courante = new Date().getFullYear();
+    const debut = courante - 3;
+    const fin = courante + 7;
+    return Array.from({ length: fin - debut + 1 }, (_, i) => {
+      const annee = debut + i;
+      return { annee, effectif: parAnnee[annee] ?? 0 };
+    });
+  }
+
+  /** Camembert par base avec 2ᵉ niveau (perçage) par unité — CDC §2.3 « camembert
+   *  par base + camembert par unité ». */
+  async parBaseHierarchique(user: RequestUser): Promise<unknown[]> {
+    const ou = await this.where(user);
+    const rows = await this.prisma.personnel.groupBy({
+      by: ['uniteId'],
+      where: { ...ou, deletedAt: null },
+      _count: { _all: true },
+    });
+    const unites = await this.prisma.unite.findMany({
+      where: { id: { in: rows.map((r) => r.uniteId) } },
+      include: { base: true },
+      orderBy: { ordre: 'asc' },
+    });
+    const parBase: Record<string, { baseId: string; base: string; effectif: number; unites: Array<Record<string, unknown>> }> = {};
+    // On groupe d'abord par base (ordre alphabétique stable), puis par unité.
+    const unitesTriees = [...unites].sort((a, b) => a.base.nom.localeCompare(b.base.nom) || a.ordre - b.ordre);
+    for (const u of unitesTriees) {
+      const effectif = (rows.find((r) => r.uniteId === u.id)?._count as unknown as { _all?: number })?._all ?? 0;
+      if (effectif === 0) continue;
+      const groupe = (parBase[u.baseId] ??= { baseId: u.baseId, base: u.base.nom, effectif: 0, unites: [] });
+      groupe.effectif += effectif;
+      groupe.unites.push({ uniteId: u.id, unite: u.nom, effectif });
+    }
+    return Object.values(parBase).sort((a, b) => a.base.localeCompare(b.base));
+  }
+
+  /** Comparaison d'une base/unité par rapport à l'ensemble — CDC §2.3. */
+  async comparaison(user: RequestUser, uniteId?: string, baseId?: string): Promise<unknown> {
+    const ou = await this.where(user);
+    const ensemble = await this.effectifsPar({ ...ou, deletedAt: null });
+
+    let filtre: Prisma.PersonnelWhereInput;
+    let libelle: string;
+    if (uniteId) {
+      filtre = { ...ou, deletedAt: null, uniteId };
+      const unite = await this.prisma.unite.findUnique({
+        where: { id: uniteId },
+        include: { base: true },
+      });
+      libelle = unite ? `${unite.base.nom} — ${unite.nom}` : `Unité ${uniteId}`;
+    } else if (baseId) {
+      filtre = { ...ou, deletedAt: null, unite: { baseId } };
+      const base = await this.prisma.base.findUnique({ where: { id: baseId } });
+      libelle = base?.nom ?? `Base ${baseId}`;
+    } else {
+      throw new Error('comparaison requiert uniteId ou baseId');
+    }
+
+    const selection = await this.effectifsPar(filtre);
+    return { selection: { libelle, ...selection }, ensemble };
+  }
+
+  /** Agrégats (catégories, spécialités, genres) depuis un filtre Prisma. */
+  private async effectifsPar(
+    filtre: Prisma.PersonnelWhereInput,
+  ): Promise<{ cat: Record<string, number>; spe: Record<string, number>; genres: { homme: number; femme: number } }> {
+    const rows = await this.prisma.personnel.findMany({
+      where: filtre,
+      select: {
+        sexe: true,
+        grade: { select: { categorie: true } },
+        specialite: { select: { libelle: true } },
+      },
+    });
+    const cat: Record<string, number> = {};
+    const spe: Record<string, number> = {};
+    let homme = 0;
+    let femme = 0;
+    for (const r of rows) {
+      const c = r.grade?.categorie ?? 'AUTRE';
+      cat[c] = (cat[c] ?? 0) + 1;
+      const s = r.specialite?.libelle ?? 'Non renseignée';
+      spe[s] = (spe[s] ?? 0) + 1;
+      if (r.sexe === 'F') femme += 1;
+      else if (r.sexe === 'M') homme += 1;
+    }
+    return { cat, spe, genres: { homme, femme } };
+  }
 }

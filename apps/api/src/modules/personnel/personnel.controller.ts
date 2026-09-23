@@ -30,6 +30,12 @@ export class PersonnelController {
     return this.personnel.doublons();
   }
 
+  @Get('annuaire')
+  @Roles('ADMIN_SYSTEME', 'RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT', 'PERSONNEL')
+  annuaire(@Query() params: RechercheParams, @CurrentUser() user: RequestUser) {
+    return this.personnel.annuaire(user, params);
+  }
+
   @Get('fin-de-lien')
   @Roles('ADMIN_SYSTEME', 'RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT')
   finDeLien(@CurrentUser() user: RequestUser) {

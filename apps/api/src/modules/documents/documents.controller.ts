@@ -92,6 +92,35 @@ export class DocumentsController {
     );
   }
 
+  @Get('pieces-jointes/versions/:versionId/telecharger')
+  @Roles('ADMIN_SYSTEME', 'RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT', 'PERSONNEL')
+  async telechargerVersion(
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const resultat = await this.documents.telechargerVersion(versionId, user, false);
+    res.setHeader('Content-Type', resultat.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="pj-${versionId}.${resultat.mimeType.split('/')[1] ?? 'bin'}"`,
+    );
+    res.send(resultat.buffer);
+  }
+
+  @Get('pieces-jointes/versions/:versionId/preview')
+  @Roles('ADMIN_SYSTEME', 'RH_ETAT_MAJOR', 'RH_BASE', 'CHEF_COMMANDEMENT', 'PERSONNEL')
+  async previewVersion(
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const resultat = await this.documents.telechargerVersion(versionId, user, true);
+    res.setHeader('Content-Type', resultat.mimeType);
+    res.setHeader('Content-Disposition', 'inline');
+    res.send(resultat.buffer);
+  }
+
   @Delete('pieces-jointes/:id')
   @Roles('ADMIN_SYSTEME', 'RH_ETAT_MAJOR', 'RH_BASE')
   async supprimer(@Param('id') id: string, @CurrentUser() user: RequestUser): Promise<{ ok: true }> {

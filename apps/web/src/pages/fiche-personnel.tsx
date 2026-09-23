@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Download, Plus, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Plus, Upload, Pencil } from 'lucide-react';
 import { api, multipart, rawHttp } from '@/lib/api';
 import { Badge, Bouton, Carte, Champ, ChargementLigne, Choix, Entree, EtatVide, Fenetre } from '@/components/ui';
 import { format } from 'date-fns';
@@ -11,6 +11,7 @@ interface OngletEntree { id: string; createdAt?: string; [cle: string]: unknown 
 interface DefOnglet {
   cle: string;
   clesApi: string;
+  clesDonnees: string;
   libelle: string;
   colonnes: Array<{ k: string; libelle: string }>;
   formulaire: Array<{ k: string; libelle: string; type?: 'date' | 'select'; options?: Array<{ v: string; l: string }>; requis?: boolean }>;
@@ -18,7 +19,7 @@ interface DefOnglet {
 
 const ONGLETS: DefOnglet[] = [
   {
-    cle: 'enfants', clesApi: 'enfants', libelle: 'Enfants',
+    cle: 'enfants', clesApi: 'enfants', clesDonnees: 'enfants', libelle: 'Enfants',
     colonnes: [{ k: 'rang', libelle: 'Rang' }, { k: 'nom', libelle: 'Nom' }, { k: 'prenoms', libelle: 'Prénoms' }, { k: 'dateNaissance', libelle: 'Naissance' }],
     formulaire: [
       { k: 'rang', libelle: 'Rang', requis: true },
@@ -30,7 +31,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'historique-grades', clesApi: 'historique-grades', libelle: 'Historique des grades',
+    cle: 'historique-grades', clesApi: 'historique-grades', clesDonnees: 'historiqueGrades', libelle: 'Historique des grades',
     colonnes: [{ k: 'grade', libelle: 'Grade' }, { k: 'referenceDecret', libelle: 'Réf. décret' }, { k: 'datePriseCommandement', libelle: 'Prise commandement' }],
     formulaire: [
       { k: 'gradeId', libelle: 'Grade', type: 'select', requis: true },
@@ -40,7 +41,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'cursus', clesApi: 'cursus', libelle: 'Cursus scolaire / formation',
+    cle: 'cursus', clesApi: 'cursus', clesDonnees: 'cursusScolaire', libelle: 'Cursus scolaire / formation',
     colonnes: [{ k: 'diplome', libelle: 'Diplôme' }, { k: 'etablissement', libelle: 'Établissement' }, { k: 'dateDebut', libelle: 'Début' }, { k: 'dateFin', libelle: 'Fin' }],
     formulaire: [
       { k: 'diplome', libelle: 'Diplôme / formation', requis: true },
@@ -51,7 +52,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'stages', clesApi: 'stages', libelle: 'Stages militaires',
+    cle: 'stages', clesApi: 'stages', clesDonnees: 'stagesMilitaires', libelle: 'Stages militaires',
     colonnes: [{ k: 'intitule', libelle: 'Intitulé' }, { k: 'dateDebut', libelle: 'Début' }, { k: 'dateFin', libelle: 'Fin' }],
     formulaire: [
       { k: 'intitule', libelle: 'Intitulé du stage', requis: true },
@@ -61,7 +62,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'langues', clesApi: 'langues', libelle: 'Langues parlées',
+    cle: 'langues', clesApi: 'langues', clesDonnees: 'competencesLinguistiques', libelle: 'Langues parlées',
     colonnes: [{ k: 'langue', libelle: 'Langue' }, { k: 'niveau', libelle: 'Niveau' }],
     formulaire: [
       { k: 'langue', libelle: 'Langue', requis: true },
@@ -69,7 +70,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'affectations', clesApi: 'affectations', libelle: 'Affectations',
+    cle: 'affectations', clesApi: 'affectations', clesDonnees: 'affectations', libelle: 'Affectations',
     colonnes: [{ k: 'unite', libelle: 'Unité' }, { k: 'dateEffet', libelle: 'Date d’effet' }],
     formulaire: [
       { k: 'uniteId', libelle: 'Unité', type: 'select', requis: true },
@@ -78,7 +79,7 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
   {
-    cle: 'decorations', clesApi: 'decorations', libelle: 'Décorations',
+    cle: 'decorations', clesApi: 'decorations', clesDonnees: 'decorations', libelle: 'Décorations',
     colonnes: [{ k: 'intitule', libelle: 'Intitulé' }, { k: 'dateEffet', libelle: 'Date d’effet' }],
     formulaire: [
       { k: 'intitule', libelle: 'Intitulée', requis: true },
@@ -87,6 +88,65 @@ const ONGLETS: DefOnglet[] = [
     ],
   },
 ];
+
+const CHAMPS_EDITABLES: Array<{ k: string; libelle: string; type?: 'date' | 'select' }> = [
+  { k: 'matriculeRecrutement', libelle: 'Matricule de recrutement' },
+  { k: 'matriculeFinancier', libelle: 'Matricule financier' },
+  { k: 'nom', libelle: 'Nom' },
+  { k: 'prenoms', libelle: 'Prénoms' },
+  { k: 'email', libelle: 'Email' },
+  { k: 'telephoneMobile', libelle: 'Téléphone mobile' },
+  { k: 'dateNaissance', libelle: 'Date de naissance', type: 'date' },
+  { k: 'lieuNaissance', libelle: 'Lieu de naissance' },
+  { k: 'prefecture', libelle: 'Préfecture' },
+  { k: 'sousPrefecture', libelle: 'Sous-préfecture' },
+  { k: 'province', libelle: 'Province' },
+  { k: 'numeroCIN', libelle: 'N° CIN' },
+  { k: 'dateDelivranceCIN', libelle: 'Date délivrance CIN', type: 'date' },
+  { k: 'lieuDelivranceCIN', libelle: 'Lieu de délivrance CIN' },
+  { k: 'dateDuplicataCIN', libelle: 'Date duplicata CIN', type: 'date' },
+  { k: 'numeroPasseport', libelle: 'N° passeport' },
+  { k: 'dateDelivrancePasseport', libelle: 'Date délivrance passeport', type: 'date' },
+  { k: 'religion', libelle: 'Religion' },
+  { k: 'groupeSanguin', libelle: 'Groupe sanguin' },
+  { k: 'taille', libelle: 'Taille (m)' },
+  { k: 'adresseActuelle', libelle: 'Adresse actuelle' },
+  { k: 'adresseRepli', libelle: 'Adresse de repli' },
+  { k: 'contactUrgence', libelle: 'Contact d’urgence' },
+  { k: 'statutFamilial', libelle: 'Situation familiale', type: 'select' },
+  { k: 'numeroAutorisationMariage', libelle: 'N° autorisation de mariage' },
+  { k: 'dateAutorisationMariage', libelle: 'Date autorisation de mariage', type: 'date' },
+  { k: 'nomConjoint', libelle: 'Nom du conjoint' },
+  { k: 'dateNaissanceConjoint', libelle: 'Naissance du conjoint', type: 'date' },
+  { k: 'lieuNaissanceConjoint', libelle: 'Lieu de naissance du conjoint' },
+  { k: 'fonctionConjoint', libelle: 'Fonction du conjoint' },
+  { k: 'sportsPratiques', libelle: 'Sports pratiqués' },
+  { k: 'nomPere', libelle: 'Père' },
+  { k: 'nomMere', libelle: 'Mère' },
+  { k: 'corps', libelle: 'Corps' },
+  { k: 'lieuEmploi', libelle: 'Lieu d’emploi' },
+  { k: 'fonctionActuelle', libelle: 'Fonction actuelle' },
+  { k: 'numeroCIM', libelle: 'N° CIM' },
+  { k: 'dateDelivranceCIM', libelle: 'Date délivrance CIM', type: 'date' },
+  { k: 'dateEffetSOC_HDRC', libelle: 'Date effet SOC / HDRC', type: 'date' },
+  { k: 'referenceSOC_HDRC', libelle: 'Référence SOC / HDRC' },
+  { k: 'dateEffetPrimeTechnicite', libelle: 'Date effet prime de technicité', type: 'date' },
+  { k: 'referencePrimeTechnicite', libelle: 'Référence prime de technicité' },
+  { k: 'numeroPermisCivil', libelle: 'N° permis civil' },
+  { k: 'datePermisCivil', libelle: 'Date permis civil', type: 'date' },
+  { k: 'numeroPermisMilitaire', libelle: 'N° permis militaire' },
+  { k: 'datePermisMilitaire', libelle: 'Date permis militaire', type: 'date' },
+  { k: 'situationMilitaire', libelle: 'Situation militaire' },
+  { k: 'origineRecrutement', libelle: 'Origine du recrutement' },
+  { k: 'dateEntreeService', libelle: 'Date d’entrée en service', type: 'date' },
+  { k: 'interruptionsService', libelle: 'Interruptions de service' },
+  { k: 'dateLiberationServiceNational', libelle: 'Libération service national', type: 'date' },
+  { k: 'datePremierRengagement', libelle: 'Premier réengagement', type: 'date' },
+  { k: 'niveauInstruction', libelle: 'Niveau d’instruction' },
+  { k: 'connaissancesInformatiques', libelle: 'Connaissances informatiques (CDC §2.2e)' },
+];
+
+const SITUATIONS_FAMILIALES = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf(Ve)'];
 
 export function FichePersonnel() {
   const { id = '' } = useParams();
@@ -111,20 +171,26 @@ export function FichePersonnel() {
         <>
           <div className="carte px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h1 className="text-xl font-bold text-slate-800">{p.nom} {p.prenoms}</h1>
-                <p className="text-sm text-slate-500">
-                  Matricule : <span className="font-mono">{p.matriculeRecrutement}</span>
-                  {' — '}{p.grade?.libelle ?? '—'} — {p.unite?.nom ?? '—'}
-                </p>
+              <div className="flex items-center gap-4">
+                {p.photo && <img src={p.photo} alt="Photo" className="h-16 w-16 rounded-full bg-slate-100 object-cover" />}
+                <div>
+                  <h1 className="text-xl font-bold text-slate-800">{p.nom} {p.prenoms}</h1>
+                  <p className="text-sm text-slate-500">
+                    Matricule : <span className="font-mono">{p.matriculeRecrutement}</span>
+                    {' — '}{p.grade?.libelle ?? '—'} — {p.unite?.nom ?? '—'}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {p.finDeLien?.statut !== 'NEANT' && (
-                  <Badge couleur={p.finDeLien.statut === 'RETRAITE' ? 'rouge' : p.finDeLien.statut === 'DANS_1_AN' ? 'ambre' : 'violet'}>
+                  <Badge couleur={p.finDeLien.statut === 'DANS_2_ANS' ? 'rouge' : p.finDeLien.statut === 'DANS_1_AN' ? 'ambre' : 'gris'}>
                     {p.finDeLien.statut === 'RETRAITE' ? 'Limite atteinte' : p.finDeLien.statut === 'DANS_1_AN' ? 'Limite ≤ 1 an' : 'Limite ≤ 2 ans'}
                     {p.finDeLien.dateFinDeLien ? ` — ${format(new Date(p.finDeLien.dateFinDeLien), 'dd/MM/yyyy')}` : ''}
                   </Badge>
                 )}
+                <Bouton variante="secondaire" onClick={() => void api.rapports.fichePersonnelPdf(p.id)}>
+                  <Download size={15} /> Imprimer la fiche
+                </Bouton>
                 <Bouton variante="secondaire" onClick={() => setDocOuvert(true)}>
                   <Upload size={15} /> Documents
                 </Bouton>
@@ -143,7 +209,7 @@ export function FichePersonnel() {
           {onglet === 'identite' && <Identite p={p} />}
           {onglet === 'documents' && <Documents pid={id} />}
           {onglet !== 'identite' && onglet !== 'documents' && (
-            <OngletDonnees pid={id} def={ONGLETS.find((o) => o.cle === onglet)!} grades={grades.data ?? []} unites={unites.data ?? []} />
+            <OngletDonnees p={p} def={ONGLETS.find((o) => o.cle === onglet)!} grades={grades.data ?? []} unites={unites.data ?? []} />
           )}
 
           <DialogueDocuments ouvert={docOuvert} onFermer={() => setDocOuvert(false)} pid={id} />
@@ -166,60 +232,185 @@ function OngletBouton({ actif, onClick, children }: { actif: boolean; onClick: (
   );
 }
 
-function Identite({ p }: { p: any }) {
-  const identite = [
-    ['Matricule', p.matriculeRecrutement],
-    ['Matricule financier', p.matriculeFinancier],
-    ['Nom', p.nom],
-    ['Prénoms', p.prenoms],
-    ['Sexe', p.sexe],
-    ['Date de naissance', p.dateNaissance ? format(new Date(p.dateNaissance), 'dd/MM/yyyy') : ''],
-    ['Lieu de naissance', p.lieuNaissance],
-    ['CIN', p.numeroCIN],
-    ['Email', p.email],
-    ['Téléphone', p.telephoneMobile],
-    ['Adresse actuelle', p.adresseActuelle],
-    ['Statut familial', p.statutFamilial],
-    ['Situation militaire', p.situationMilitaire],
-    ['Spécialité', p.specialite?.libelle],
-    ['Niveau d’instruction', p.niveauInstruction],
-    ['Date d’entrée en service', p.dateEntreeService ? format(new Date(p.dateEntreeService), 'dd/MM/yyyy') : ''],
-    ['Corps', p.corps],
-    ['Taille', p.taille ? `${p.taille} m` : ''],
-    ['Groupe sanguin', p.groupeSanguin],
-    ['Religiosité', p.religion],
-  ];
+function LigneValeur({ cle, valeur }: { cle: string; valeur?: unknown }) {
+  if (valeur === null || valeur === undefined || valeur === '') return null;
   return (
-    <Carte titre="Identification">
-      <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-        {identite.map(([cle, valeur]) => (
-          <div key={cle}>
-            <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{cle}</dt>
-            <dd className="mt-0.5 text-sm text-slate-800">{valeur || '—'}</dd>
-          </div>
-        ))}
-      </dl>
-    </Carte>
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{cle}</dt>
+      <dd className="mt-0.5 text-sm text-slate-800">{valeur as string}</dd>
+    </div>
   );
 }
 
-function OngletDonnees({ pid, def, grades, unites }: { pid: string; def: DefOnglet; grades: Array<{ id: string; libelle: string }>; unites: Array<{ id: string; nom: string }> }) {
+function Identite({ p }: { p: any }) {
+  const fmtd = (v: unknown) => (v ? format(new Date(v as string), 'dd/MM/yyyy') : '');
+
+  const sections: Array<{ titre: string; champs: Array<[string, unknown]> }> = [
+    {
+      titre: 'Identification',
+      champs: [
+        ['Matricule', p.matriculeRecrutement], ['Matricule financier', p.matriculeFinancier],
+        ['Nom', p.nom], ['Prénoms', p.prenoms], ['Sexe', p.sexe],
+        ['Date de naissance', p.dateNaissance ? fmtd(p.dateNaissance) : ''], ['Lieu de naissance', p.lieuNaissance],
+        ['Préfecture', p.prefecture], ['Sous-préfecture', p.sousPrefecture], ['Province', p.province],
+        ['Taille', p.taille ? `${p.taille} m` : ''], ['Groupe sanguin', p.groupeSanguin], ['Religion', p.religion],
+      ],
+    },
+    {
+      titre: 'Pièces d’identité',
+      champs: [
+        ['N° CIN', p.numeroCIN], ['Délivrance CIN', p.dateDelivranceCIN ? fmtd(p.dateDelivranceCIN) : ''],
+        ['Lieu CIN', p.lieuDelivranceCIN], ['Duplicata CIN', p.dateDuplicataCIN ? fmtd(p.dateDuplicataCIN) : ''],
+        ['N° passeport', p.numeroPasseport], ['Délivrance passeport', p.dateDelivrancePasseport ? fmtd(p.dateDelivrancePasseport) : ''],
+      ],
+    },
+    {
+      titre: 'Coordonnées et domicile',
+      champs: [
+        ['Email', p.email], ['Téléphone', p.telephoneMobile], ['Adresse actuelle', p.adresseActuelle],
+        ['Adresse de repli', p.adresseRepli], ['Contact d’urgence', p.contactUrgence],
+      ],
+    },
+    {
+      titre: 'Situation familiale',
+      champs: [
+        ['Situation familiale', p.statutFamilial], ['N° autorisation mariage', p.numeroAutorisationMariage],
+        ['Date autorisation mariage', p.dateAutorisationMariage ? fmtd(p.dateAutorisationMariage) : ''],
+        ['Conjoint', p.nomConjoint], ['Naissance conjoint', p.dateNaissanceConjoint ? fmtd(p.dateNaissanceConjoint) : ''],
+        ['Lieu naissance conjoint', p.lieuNaissanceConjoint], ['Fonction conjoint', p.fonctionConjoint],
+        ['Père', p.nomPere], ['Mère', p.nomMere], ['Sports pratiqués', p.sportsPratiques],
+      ],
+    },
+    {
+      titre: 'Carrière et affectation',
+      champs: [
+        ['Grade', p.grade?.libelle], ['Corps', p.corps], ['Spécialité', p.specialite?.libelle],
+        ['Unité', p.unite?.nom], ['Base', p.unite?.base?.nom], ['Fonction actuelle', p.fonctionActuelle],
+        ['Lieu d’emploi', p.lieuEmploi], ['Situation militaire', p.situationMilitaire],
+        ['Origine du recrutement', p.origineRecrutement],
+        ['Entrée en service', p.dateEntreeService ? fmtd(p.dateEntreeService) : ''],
+        ['Interruptions de service', p.interruptionsService],
+        ['Libération service national', p.dateLiberationServiceNational ? fmtd(p.dateLiberationServiceNational) : ''],
+        ['Premier réengagement', p.datePremierRengagement ? fmtd(p.datePremierRengagement) : ''],
+        ['Niveau d’instruction', p.niveauInstruction],
+        ['Connaissances informatiques', p.connaissancesInformatiques],
+      ],
+    },
+    {
+      titre: 'Situation militaire — décisions',
+      champs: [
+        ['N° CIM', p.numeroCIM], ['Délivrance CIM', p.dateDelivranceCIM ? fmtd(p.dateDelivranceCIM) : ''],
+        ['Effet SOC / HDRC', p.dateEffetSOC_HDRC ? fmtd(p.dateEffetSOC_HDRC) : ''], ['Réf. SOC / HDRC', p.referenceSOC_HDRC],
+        ['Effet prime technicité', p.dateEffetPrimeTechnicite ? fmtd(p.dateEffetPrimeTechnicite) : ''],
+        ['Réf. prime technicité', p.referencePrimeTechnicite],
+        ['Permis civil', p.numeroPermisCivil], ['Date permis civil', p.datePermisCivil ? fmtd(p.datePermisCivil) : ''],
+        ['Permis militaire', p.numeroPermisMilitaire], ['Date permis militaire', p.datePermisMilitaire ? fmtd(p.datePermisMilitaire) : ''],
+      ],
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <ModifierFiche p={p} />
+      {p.photo && (
+        <Carte titre="Photo">
+          <img src={p.photo} alt="Photo du personnel" className="max-h-48 rounded-lg border border-slate-200" />
+        </Carte>
+      )}
+      {sections.map((sec) => (
+        <Carte key={sec.titre} titre={sec.titre}>
+          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+            {sec.champs.map(([cle, valeur]) => (
+              <LigneValeur key={cle} cle={cle} valeur={valeur} />
+            ))}
+          </dl>
+        </Carte>
+      ))}
+    </div>
+  );
+}
+
+function ModifierFiche({ p }: { p: any }) {
+  const queryClient = useQueryClient();
+  const [ouvert, setOuvert] = useState(false);
+  const [valeurs, setValeurs] = useState<Record<string, string>>({});
+  const [msg, setMsg] = useState<{ ok: boolean; texte: string } | null>(null);
+
+  const ouvrir = () => {
+    const init: Record<string, string> = {};
+    for (const f of CHAMPS_EDITABLES) {
+      const v = p[f.k];
+      init[f.k] = v ? (f.type === 'date' ? String(v).slice(0, 10) : String(v)) : '';
+    }
+    setValeurs(init);
+    setMsg(null);
+    setOuvert(true);
+  };
+
+  const mutation = useMutation({
+    mutationFn: (body: Record<string, string>) => {
+      const propre: Record<string, string> = {};
+      for (const [k, v] of Object.entries(body)) {
+        if (v !== '' && v !== null && v !== undefined) propre[k] = v;
+      }
+      return api.personnel.modifier(p.id, propre);
+    },
+    onSuccess: () => {
+      setMsg({ ok: true, texte: 'Fiche mise à jour.' });
+      void queryClient.invalidateQueries({ queryKey: ['personnel', p.id] });
+    },
+    onError: (e: Error) => setMsg({ ok: false, texte: e.message }),
+  });
+
+  return (
+    <>
+      <Bouton variante="secondaire" onClick={ouvrir}>
+        <Pencil size={15} /> Modifier la fiche
+      </Bouton>
+      <Fenetre ouvert={ouvert} onFermer={() => setOuvert(false)} titre="Modifier l’identification" largeur="max-w-3xl">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {CHAMPS_EDITABLES.map((f) => (
+            <Champ key={f.k} label={f.libelle}>
+              {f.type === 'select' ? (
+                <Choix value={valeurs[f.k] ?? ''} onChange={(e) => setValeurs({ ...valeurs, [f.k]: e.target.value })}>
+                  <option value="">—</option>
+                  {SITUATIONS_FAMILIALES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </Choix>
+              ) : (
+                <Entree
+                  type={f.type === 'date' ? 'date' : 'text'}
+                  value={valeurs[f.k] ?? ''}
+                  onChange={(e) => setValeurs({ ...valeurs, [f.k]: e.target.value })}
+                />
+              )}
+            </Champ>
+          ))}
+        </div>
+        {msg && <p className={`mt-3 text-sm ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.texte}</p>}
+        <div className="mt-4 flex gap-2">
+          <Bouton onClick={() => mutation.mutate(valeurs)} disabled={mutation.isPending}>Enregistrer</Bouton>
+          <Bouton variante="ghost" onClick={() => setOuvert(false)}>Fermer</Bouton>
+        </div>
+      </Fenetre>
+    </>
+  );
+}
+
+function OngletDonnees({ p, def, grades, unites }: { p: any; def: DefOnglet; grades: Array<{ id: string; libelle: string }>; unites: Array<{ id: string; nom: string }> }) {
   const queryClient = useQueryClient();
   const [ajout, setAjout] = useState(false);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
-  const liste = useQuery({
-    queryKey: ['onglet', pid, def.cle],
-    queryFn: () => api.onglets.lister(pid, def.clesApi) as Promise<OngletEntree[]>,
-  });
+  const items: OngletEntree[] = p[def.clesDonnees] ?? [];
+  const rafraichir = (pid: string) => void queryClient.invalidateQueries({ queryKey: ['personnel', pid] });
 
   const mutation = useMutation({
-    mutationFn: (body: Record<string, string>) => api.onglets.creer(pid, def.clesApi, body),
+    mutationFn: (body: Record<string, string>) => api.onglets.creer(p.id, def.clesApi, body),
     onSuccess: () => {
       setAjout(false);
       setValeurs({});
-      void queryClient.invalidateQueries({ queryKey: ['onglet', pid, def.cle] });
+      rafraichir(p.id);
     },
     onError: (e: Error) => setErr(e.message),
   });
@@ -227,8 +418,8 @@ function OngletDonnees({ pid, def, grades, unites }: { pid: string; def: DefOngl
   async function supprimer(itemId: string) {
     if (!window.confirm(`Supprimer cet élément de « ${def.libelle} » ?`)) return;
     try {
-      await api.onglets.supprimer(pid, def.clesApi, itemId);
-      void queryClient.invalidateQueries({ queryKey: ['onglet', pid, def.cle] });
+      await api.onglets.supprimer(p.id, def.clesApi, itemId);
+      rafraichir(p.id);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -248,9 +439,8 @@ function OngletDonnees({ pid, def, grades, unites }: { pid: string; def: DefOngl
         </Bouton>
       }
     >
-      {liste.isLoading && <ChargementLigne />}
-      {!liste.isLoading && (liste.data?.length ?? 0) === 0 && <EtatVide message="Aucune donnée dans cet onglet." />}
-      {liste.data && liste.data.length > 0 && (
+      {items.length === 0 && <EtatVide message="Aucune donnée dans cet onglet." />}
+      {items.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="table-entete border-b border-slate-200 bg-slate-50">
@@ -261,7 +451,7 @@ function OngletDonnees({ pid, def, grades, unites }: { pid: string; def: DefOngl
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {liste.data.map((item) => (
+              {items.map((item) => (
                 <tr key={item.id} className="table-ligne">
                   {def.colonnes.map((c) => (
                     <td key={c.k} className="cellule-table hidden text-xs text-slate-700 md:table-cell">
@@ -344,7 +534,7 @@ function Documents({ pid }: { pid: string }) {
   };
 
   return (
-    <Carte titre="Pièces jointes">
+    <Carte titre="Pièces jointes — prévisualisation et historique des versions (CDC §2.2j)">
       <form onSubmit={envoyer} className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
         <Champ label="Type de pièce">
           <Choix name="type" required>
@@ -357,7 +547,7 @@ function Documents({ pid }: { pid: string }) {
           </Choix>
         </Champ>
         <Champ label="Fichier (PDF, image, Word ≤ 10 Mo)">
-          <Entree type="file" name="fichier" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" required />
+          <Entree type="file" name="fichier" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" required />
         </Champ>
         <Bouton type="submit"><Upload size={15} /> Déposer</Bouton>
       </form>
@@ -370,21 +560,58 @@ function Documents({ pid }: { pid: string }) {
       {(liste.data?.length ?? 0) === 0 && !liste.isLoading && <EtatVide message="Aucune pièce jointe." />}
       {liste.data && liste.data.length > 0 && (
         <ul className="divide-y divide-slate-100">
-          {liste.data.map((pj: any) => (
-            <li key={pj.id} className="flex items-center justify-between py-2">
-              <div>
-                <p className="text-sm font-medium text-slate-800">{pj.nomOriginale}</p>
-                <p className="text-xs text-slate-500">v{pj.versions?.length ?? 1} — {pj.type}</p>
-              </div>
-              <a
-                className="inline-flex items-center gap-1 text-sm text-marine-700 hover:underline"
-                href={`/api/pieces-jointes/${pj.id}/telecharger`}
-                download
-              >
-                <Download size={14} /> Télécharger
-              </a>
-            </li>
-          ))}
+          {liste.data.map((pj: any) => {
+            const versions = pj.versions ?? [];
+            const active = versions[0];
+            const estImage = active?.mimeType?.startsWith('image/');
+            return (
+              <li key={pj.id} className="py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{active?.nomOriginal ?? pj.nomOriginale ?? 'Pièce jointe'}</p>
+                    <p className="text-xs text-slate-500">Type {pj.type} — {versions.length} version(s)</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      className="inline-flex items-center gap-1 text-sm text-marine-700 hover:underline"
+                      href={`/api/pieces-jointes/${pj.id}/preview`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Eye size={14} /> Prévisualiser
+                    </a>
+                    <a
+                      className="inline-flex items-center gap-1 text-sm text-marine-700 hover:underline"
+                      href={`/api/pieces-jointes/${pj.id}/telecharger`}
+                      download
+                    >
+                      <Download size={14} /> Télécharger
+                    </a>
+                  </div>
+                </div>
+                {estImage && active && (
+                  <img
+                    src={`/api/pieces-jointes/${pj.id}/preview`}
+                    alt="Aperçu"
+                    className="mt-2 max-h-40 rounded border border-slate-200 object-contain"
+                  />
+                )}
+                {versions.length > 1 && (
+                  <ul className="mt-2 space-y-1 border-l-2 border-slate-200 pl-3">
+                    {versions.map((v: any, i: number) => (
+                      <li key={v.id} className="flex items-center justify-between text-xs text-slate-500">
+                        <span>Version {versions.length - i} — {v.nomOriginal} — {v.dateDepot ? format(new Date(v.dateDepot), 'dd/MM/yyyy') : ''} — {(v.tailleOctets / 1024).toFixed(1)} Ko</span>
+                        <span className="flex gap-2">
+                          <a className="text-marine-700 hover:underline" href={`/api/pieces-jointes/versions/${v.id}/preview`} target="_blank" rel="noreferrer">voir</a>
+                          <a className="text-marine-700 hover:underline" href={`/api/pieces-jointes/versions/${v.id}/telecharger`} download>télécharger</a>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </Carte>

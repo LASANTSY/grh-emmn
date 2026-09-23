@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
+import { Prisma } from '@prisma/client';
+import { hash } from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AppError } from '../../common/errors/app-error';
 import { AuditService } from '../../common/audit/audit.service';
@@ -115,6 +117,23 @@ export class ImportsService {
       folder: 'imports',
     });
 
+    // §2.4 : détection des doublons (matricule ou CIN) par rapport à la base
+    // et au sein du fichier, signalés comme avertissements (pas des erreurs).
+    const connus = await this.prisma.personnel.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { matriculeRecrutement: { in: lignes.map((l) => l.donnees.matricule).filter(Boolean) } },
+          { numeroCIN: { in: lignes.map((l) => l.donnees.cin).filter(Boolean) } },
+        ],
+      },
+      select: { matriculeRecrutement: true, numeroCIN: true },
+    });
+    const matsConnus = new Set(connus.map((c) => c.matriculeRecrutement));
+    const cinsConnus = new Set(connus.filter((c) => c.numeroCIN).map((c) => c.numeroCIN));
+    const vuMatricule = new Map<string, number>();
+    const vuCin = new Map<string, number>();
+
     const importe = await this.prisma.importPersonnel.create({
       data: {
         compteId: user.compteId,
@@ -130,7 +149,29 @@ export class ImportsService {
       total: lignes.length,
       valides: lignes.filter((l) => l.erreurs.length === 0).length,
       avecErreurs: lignes.filter((l) => l.erreurs.length > 0).length,
-      lignes: lignes.map((l) => ({ numeroLigne: l.numeroLigne, erreursGroupees: l.erreurs, apercu: l.apercu })),
+      lignes: lignes.map((l) => {
+        const avertissements: string[] = [];
+        if (matsConnus.has(l.donnees.matricule)) {
+          avertissements.push('Matricule déjà présent en base (mise à jour prévue).');
+        } else {
+          const lignePrec = vuMatricule.get(l.donnees.matricule);
+          if (lignePrec) avertissements.push(`Matricule en double dans le fichier (ligne ${lignePrec}).`);
+          else vuMatricule.set(l.donnees.matricule, l.numeroLigne);
+        }
+        if (l.donnees.cin && cinsConnus.has(l.donnees.cin)) {
+          avertissements.push('CIN déjà présente en base (mise à jour prévue).');
+        } else if (l.donnees.cin) {
+          const lignePrec = vuCin.get(l.donnees.cin);
+          if (lignePrec) avertissements.push(`CIN en double dans le fichier (ligne ${lignePrec}).`);
+          else vuCin.set(l.donnees.cin, l.numeroLigne);
+        }
+        return {
+          numeroLigne: l.numeroLigne,
+          erreursGroupees: l.erreurs,
+          avertissements,
+          apercu: l.apercu,
+        };
+      }),
     };
   }
 
@@ -162,6 +203,15 @@ export class ImportsService {
     let ignores = 0;
     let errones = 0;
 
+    const genererMotDePasse = (): string => {
+      const maj = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+      const min = 'abcdefghijkmnpqrstuvwxyz';
+      const chiffres = '23456789';
+      const pick = (s: string, n: number) =>
+        Array.from({ length: n }, () => s[Math.floor(Math.random() * s.length)]).join('');
+      return `${pick(maj, 4)}${pick(chiffres, 4)}${pick(min, 4)}`;
+    };
+
     const resultat = await this.prisma.$transaction(async (tx) => {
       for (const ligne of lignes) {
         const { numeroLigne, erreurs, donnees } = ligne;
@@ -170,18 +220,44 @@ export class ImportsService {
           await tx.ligneImport.create({ data: { importPersonnelId: importId, numeroLigne, statut: 'ERREUR', actionAppliquee: 'ERREUR', messageErreur: erreurs.join(' ; '), donnees } });
           continue;
         }
-        const dejaExistant = await tx.personnel.findFirst({ where: { matriculeRecrutement: donnees.matricule, deletedAt: null }, select: { id: true } });
-        if (dejaExistant) {
-          doublons += 1;
-          await tx.ligneImport.create({ data: { importPersonnelId: importId, numeroLigne, statut: 'ERREUR', actionAppliquee: 'MISE_A_JOUR', messageErreur: 'Matricule déjà présent dans la base (mise à jour non appliquée).', personnelId: dejaExistant.id, donnees } });
-          continue;
-        }
         const gradeId = gradeParLibelle.get(donnees.corps);
         if (!gradeId) {
           ignores += 1;
           await tx.ligneImport.create({ data: { importPersonnelId: importId, numeroLigne, statut: 'ERREUR', actionAppliquee: 'ERREUR', messageErreur: 'Grade introuvable.', donnees } });
           continue;
         }
+
+        // §2.4 : un doublon sur matricule OU CIN déclenche une vraie mise à jour.
+        const dejaExistant = await tx.personnel.findFirst({
+          where: {
+            deletedAt: null,
+            OR: [
+              { matriculeRecrutement: donnees.matricule },
+              ...(donnees.cin ? [{ numeroCIN: donnees.cin }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+        if (dejaExistant) {
+          doublons += 1;
+          await tx.personnel.update({
+            where: { id: dejaExistant.id },
+            data: {
+              nom: donnees.nom,
+              prenoms: donnees.prenoms,
+              dateNaissance: valeurDate(donnees.dateNaissance),
+              lieuNaissance: donnees.lieuNaissance || null,
+              sexe: (donnees.sexe.toUpperCase() || 'A') as 'M' | 'F' | 'A',
+              statutFamilial: donnees.situationFamiliale || null,
+              adresseActuelle: donnees.adresse || null,
+              email: donnees.email || null,
+              telephoneMobile: donnees.telephone || null,
+            },
+          });
+          await tx.ligneImport.create({ data: { importPersonnelId: importId, numeroLigne, statut: 'VALIDE', actionAppliquee: 'MISE_A_JOUR', personnelId: dejaExistant.id, donnees } });
+          continue;
+        }
+
         const nouveau = await tx.personnel.create({
           data: {
             matriculeRecrutement: donnees.matricule,
@@ -195,6 +271,23 @@ export class ImportsService {
             adresseActuelle: donnees.adresse || null,
           },
         });
+
+        // §2.6c : compte créé automatiquement à partir du matricule.
+        try {
+          await tx.compteUtilisateur.create({
+            data: {
+              personnelId: nouveau.id,
+              identifiant: donnees.matricule,
+              motDePasseHash: await hash(genererMotDePasse(), 10),
+              typeCompte: 'PERSONNEL',
+              doitChangerMotDePasse: true,
+              dateCreation: new Date(),
+            },
+          });
+        } catch (e) {
+          if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+        }
+
         await tx.ligneImport.create({ data: { importPersonnelId: importId, numeroLigne, statut: 'VALIDE', actionAppliquee: 'CREATION', personnelId: nouveau.id, donnees } });
         importe += 1;
       }
