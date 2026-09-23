@@ -1,0 +1,26 @@
+# deps
+node_modules/
+
+# builds
+dist/
+build/
+.out/
+
+# env
+data/
+.env
+.env.*
+!.env.example
+*.local
+!.env.example
+
+# logs
+*.log
+
+# uploads
+apps/api/data/
+
+# os
+ds_store
+Thumbs.db
+.DS_Store

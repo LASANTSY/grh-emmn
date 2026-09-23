@@ -1,0 +1,531 @@
+// GRH EMMN — Schéma Prisma (source de vérité du modèle de données)
+// Dérivé d'Analyse_UML_GRH_EMMN.md (§3-5) et du Cahier des charges (§2.2, §2.5, §2.6, §2.3).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Énumérations
+// ---------------------------------------------------------------------------
+
+enum GradeCategorie {
+  OFFICIER_GENERAL
+  OFFICIER_MARINE
+  OFFICIER_MARINIER
+  QMO
+}
+
+enum NiveauCompetence {
+  AVANCE
+  MOYEN
+  MAUVAIS
+}
+
+enum TypeCompte {
+  ADMIN_SYSTEME
+  RH_ETAT_MAJOR
+  RH_BASE
+  CHEF_COMMANDEMENT
+  PERSONNEL
+}
+
+enum StatutDemande {
+  EN_ATTENTE
+  VALIDEE
+  REJETEE
+}
+
+enum StatutLigneImport {
+  VALIDE
+  ERREUR
+}
+
+enum ActionImport {
+  CREATION
+  MISE_A_JOUR
+  IGNOREE
+  ERREUR
+}
+
+enum StatutImport {
+  PREVUE
+  REJETEE
+  IMPORTEE
+  PARTIELLE
+}
+
+enum ActionAudit {
+  CREATION
+  MODIFICATION
+  SUPPRESSION
+  CONNEXION
+  ECHEC_CONNEXION
+  IMPORT
+  EXPORT
+  VALIDATION
+  REJET
+  TELEVERSEMENT
+  TELECHARGEMENT
+  CHANGEMENT_PERMISSION
+  CHANGEMENT_COMPTE
+}
+
+// ---------------------------------------------------------------------------
+// Référentiels
+// ---------------------------------------------------------------------------
+
+model Base {
+  id        String   @id @default(cuid())
+  nom       String   @db.VarChar(200)
+  ville     String?  @db.VarChar(200)
+  code      String?  @unique @db.VarChar(20)
+  ordre     Int      @default(0)
+  unites    Unite[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([nom])
+}
+
+model Unite {
+  id        String     @id @default(cuid())
+  nom       String     @db.VarChar(200)
+  code      String?    @unique @db.VarChar(20)
+  ordre     Int        @default(0)
+  baseId    String
+  base      Base       @relation(fields: [baseId], references: [id], onDelete: Restrict)
+  personnel Personnel[]
+  affectations Affectation[]
+  comptes   CompteUtilisateur[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([baseId])
+  @@index([nom])
+}
+
+model Grade {
+  id                 String             @id @default(cuid())
+  libelle            String             @unique @db.VarChar(200)
+  categorie          GradeCategorie
+  ageDepartRetraite  Int
+  ordre              Int
+  personnels         Personnel[]
+  historiqueGrades   HistoriqueGrade[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([categorie])
+}
+
+model Specialite {
+  id          String      @id @default(cuid())
+  libelle     String      @unique @db.VarChar(200)
+  personnels  Personnel[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Personnel (cœur du système) — fiche en 8 onglets
+// ---------------------------------------------------------------------------
+
+model Personnel {
+  id                         String                    @id @default(cuid())
+  matriculeRecrutement       String                    @unique @db.VarChar(50)
+  matriculeFinancier         String?                   @unique @db.VarChar(50)
+  nom                        String                    @db.VarChar(200)
+  prenoms                    String                    @db.VarChar(200)
+  sexe                       String?                   @db.VarChar(20) // 'M' | 'F' | 'A' (pyramide, import)
+  photo                      String?                   @db.VarChar(500)
+
+  dateNaissance              DateTime?                 @db.Date
+  lieuNaissance              String?                   @db.VarChar(200)
+  prefecture                 String?                   @db.VarChar(200)
+  sousPrefecture             String?                   @db.VarChar(200)
+  province                   String?                   @db.VarChar(200)
+
+  email                      String?                   @db.VarChar(200)
+  telephoneMobile            String?                   @db.VarChar(50)
+
+  numeroCIN                  String?                   @unique @db.VarChar(50)
+  dateDelivranceCIN          DateTime?                 @db.Date
+  lieuDelivranceCIN          String?                   @db.VarChar(200)
+  dateDuplicataCIN           DateTime?                 @db.Date
+  numeroPasseport            String?                   @db.VarChar(50)
+  dateDelivrancePasseport    DateTime?                 @db.Date
+
+  religion                   String?                   @db.VarChar(100)
+  groupeSanguin              String?                   @db.VarChar(10)
+  taille                     Decimal?                  @db.Decimal(5, 2)
+
+  adresseActuelle            String?                   @db.VarChar(500)
+  adresseRepli               String?                   @db.VarChar(500)
+  contactUrgence             String?                   @db.VarChar(500)
+
+  statutFamilial             String?                   @db.VarChar(100)
+  numeroAutorisationMariage  String?                   @db.VarChar(100)
+  dateAutorisationMariage    DateTime?                 @db.Date
+  nomConjoint                String?                   @db.VarChar(200)
+  dateNaissanceConjoint      DateTime?                 @db.Date
+  lieuNaissanceConjoint      String?                   @db.VarChar(200)
+  fonctionConjoint           String?                   @db.VarChar(200)
+
+  sportsPratiques            String?                   @db.VarChar(300)
+  nomPere                    String?                   @db.VarChar(200)
+  nomMere                    String?                   @db.VarChar(200)
+
+  // Renseignements militaires
+  corps                      String?                   @db.VarChar(100)
+  lieuEmploi                 String?                   @db.VarChar(300)
+  fonctionActuelle           String?                   @db.VarChar(300)
+  numeroCIM                  String?                   @db.VarChar(50)
+  dateDelivranceCIM          DateTime?                 @db.Date
+  dateEffetSOC_HDRC          DateTime?                 @db.Date
+  referenceSOC_HDRC          String?                   @db.VarChar(200)
+  dateEffetPrimeTechnicite   DateTime?                 @db.Date
+  referencePrimeTechnicite   String?                   @db.VarChar(200)
+  numeroPermisCivil          String?                   @db.VarChar(50)
+  datePermisCivil            DateTime?                 @db.Date
+  numeroPermisMilitaire      String?                   @db.VarChar(50)
+  datePermisMilitaire        DateTime?                 @db.Date
+  situationMilitaire         String?                   @db.VarChar(100)
+  origineRecrutement         String?                   @db.VarChar(200)
+  dateEntreeService          DateTime?                 @db.Date
+  interruptionsService       String?                   @db.VarChar(500)
+  dateLiberationServiceNational DateTime?              @db.Date
+  datePremierRengagement     DateTime?                 @db.Date
+  niveauInstruction          String?                   @db.VarChar(200)
+  connaissancesInformatiques String?                   @db.VarChar(500)
+
+  // Relations de structure
+  gradeId                    String
+  grade                      Grade                     @relation(fields: [gradeId], references: [id])
+  uniteId                    String
+  unite                      Unite                     @relation(fields: [uniteId], references: [id])
+  specialiteId               String?
+  specialite                 Specialite?               @relation(fields: [specialiteId], references: [id])
+
+  compte                     CompteUtilisateur?
+  enfants                    Enfant[]
+  historiqueGrades           HistoriqueGrade[]
+  cursusScolaire             CursusScolaire[]
+  stagesMilitaires           StageMilitaire[]
+  competencesLinguistiques   CompetenceLinguistique[]
+  affectations               Affectation[]
+  decorations                Decoration[]
+  piecesJointes              PieceJointe[]
+  demandesModification       DemandeModification[]
+  entreesAudit               EntreeAudit[]
+  lignesImport               LigneImport[]
+
+  deletedAt                  DateTime?  // soft delete (datas sensibles : suppression logique)
+  createdAt                  DateTime   @default(now())
+  updatedAt                  DateTime   @updatedAt
+
+  @@unique([nom, prenoms, dateNaissance])
+  @@index([nom, prenoms])
+  @@index([gradeId])
+  @@index([uniteId])
+  @@index([specialiteId])
+  @@index([dateNaissance])
+  @@index([deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 2 — Enfants à charge
+// ---------------------------------------------------------------------------
+
+model Enfant {
+  id             String    @id @default(cuid())
+  personnelId    String
+  personnel      Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  rang           Int
+  nom            String    @db.VarChar(200)
+  prenoms        String?   @db.VarChar(200)
+  dateNaissance  DateTime? @db.Date
+  sexe           String?   @db.VarChar(20)
+  lienParente    String?   @db.VarChar(100)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([personnelId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 3 — Renseignements militaires : historique des grades
+// ---------------------------------------------------------------------------
+
+model HistoriqueGrade {
+  id                     String     @id @default(cuid())
+  personnelId            String
+  personnel              Personnel  @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  gradeId                String
+  grade                  Grade      @relation(fields: [gradeId], references: [id])
+  referenceDecret        String?    @db.VarChar(300)
+  datePriseCommandement  DateTime?  @db.Date
+  observations           String?    @db.VarChar(500)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  @@index([personnelId])
+  @@index([gradeId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 4 — Études et formations : cursus scolaire / stages militaires
+// ---------------------------------------------------------------------------
+
+model CursusScolaire {
+  id             String    @id @default(cuid())
+  personnelId    String
+  personnel      Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  etablissement  String    @db.VarChar(300)
+  villePays      String?   @db.VarChar(200)
+  dateDebut      DateTime? @db.Date
+  dateFin        DateTime? @db.Date
+  diplomeObtenu  String?   @db.VarChar(300)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([personnelId])
+}
+
+model StageMilitaire {
+  id               String    @id @default(cuid())
+  personnelId      String
+  personnel        Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  etablissement    String    @db.VarChar(300)
+  lieu             String?   @db.VarChar(200)
+  natureFormation  String?   @db.VarChar(300)
+  dateDebut        DateTime? @db.Date
+  dateFin          DateTime? @db.Date
+  decisionEnvoi    String?   @db.VarChar(300)
+  diplomeCertificat String?  @db.VarChar(300)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([personnelId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 5 — Connaissances particulières : compétences linguistiques
+// ---------------------------------------------------------------------------
+
+model CompetenceLinguistique {
+  id            String            @id @default(cuid())
+  personnelId   String
+  personnel     Personnel         @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  langue        String            @db.VarChar(100)
+  niveauEcrit   NiveauCompetence
+  niveauParle   NiveauCompetence
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([personnelId, langue])
+  @@index([personnelId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 6 — Affectations successives (historique non écrasé)
+// ---------------------------------------------------------------------------
+
+model Affectation {
+  id             String    @id @default(cuid())
+  personnelId    String
+  personnel      Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  uniteId        String
+  unite          Unite     @relation(fields: [uniteId], references: [id])
+  decision       String?   @db.VarChar(300)
+  dateEffet      DateTime? @db.Date
+  fonctionEmploi String?   @db.VarChar(300)
+  observations   String?   @db.VarChar(500)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([personnelId])
+  @@index([uniteId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 7 — Décorations successives
+// ---------------------------------------------------------------------------
+
+model Decoration {
+  id            String    @id @default(cuid())
+  personnelId   String
+  personnel     Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  libelle       String    @db.VarChar(300)
+  reference     String?   @db.VarChar(300)
+  dateEffet     DateTime? @db.Date
+  observations  String?   @db.VarChar(500)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([personnelId])
+}
+
+// ---------------------------------------------------------------------------
+// Onglet 8 — Pièces jointes (avec versionnement)
+// ---------------------------------------------------------------------------
+
+model PieceJointe {
+  id          String                @id @default(cuid())
+  personnelId String
+  personnel   Personnel             @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  type        String                @db.VarChar(100)
+  dateAjout   DateTime              @default(now())
+  versions    VersionPieceJointe[]
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([personnelId])
+}
+
+model VersionPieceJointe {
+  id             String      @id @default(cuid())
+  pieceJointeId  String
+  pieceJointe    PieceJointe @relation(fields: [pieceJointeId], references: [id], onDelete: Cascade)
+  fichier        String      @db.VarChar(500) // clé de stockage (chemin local ou clé S3)
+  format         String      @db.VarChar(50)
+  tailleOctets   Int
+  nomOriginal    String      @db.VarChar(300)
+  mimeType       String      @db.VarChar(150)
+  dateDepot      DateTime    @default(now())
+  deposeParId    String?
+  deposePar      CompteUtilisateur? @relation("VersionsDeposees", fields: [deposeParId], references: [id])
+
+  @@index([pieceJointeId])
+}
+
+// ---------------------------------------------------------------------------
+// Comptes utilisateurs (RBAC + périmètre organisationnel)
+// ---------------------------------------------------------------------------
+
+model CompteUtilisateur {
+  id                  String        @id @default(cuid())
+  personnelId         String        @unique
+  personnel           Personnel     @relation(fields: [personnelId], references: [id])
+  identifiant         String        @unique @db.VarChar(100)
+  motDePasseHash      String        @db.VarChar(300)
+  typeCompte          TypeCompte
+  dateCreation        DateTime      @default(now())
+  compteVerrouille    Boolean       @default(false)
+  tentativesEchec     Int           @default(0)
+  dateVerrouillage    DateTime?
+  dateDernierAcces    DateTime?
+  doitChangerMotDePasse Boolean     @default(true)
+  actif               Boolean       @default(true)
+  // Périmètre organisationnel : unité/base pour RH_BASE et CHEF (null = global)
+  uniteId             String?
+  unite               Unite?        @relation(fields: [uniteId], references: [id])
+  demandesValidees    DemandeModification[]  @relation("Validateur")
+  demandesCreees      DemandeModification[]  @relation("AuteurDemande")
+  entreesAudit        EntreeAudit[]
+  importsPersonnel    ImportPersonnel[]
+  versionsDeposees    VersionPieceJointe[]    @relation("VersionsDeposees")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([typeCompte])
+}
+
+// ---------------------------------------------------------------------------
+// Workflow de validation (comptes « Personnel »)
+// ---------------------------------------------------------------------------
+
+model DemandeModification {
+  id             String           @id @default(cuid())
+  personnelId    String
+  personnel      Personnel        @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  compteId       String           // auteur (compte agent)
+  compte         CompteUtilisateur @relation("AuteurDemande", fields: [compteId], references: [id])
+  champModifie   String           @db.VarChar(300)
+  ancienneValeur String?          @db.Text
+  nouvelleValeur String?          @db.Text
+  statut         StatutDemande    @default(EN_ATTENTE)
+  dateDemande    DateTime         @default(now())
+  dateTraitement DateTime?
+  valideParId    String?
+  validePar      CompteUtilisateur? @relation("Validateur", fields: [valideParId], references: [id])
+  commentaire    String?          @db.VarChar(500)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([personnelId])
+  @@index([statut])
+}
+
+// ---------------------------------------------------------------------------
+// Journal d'audit
+// ---------------------------------------------------------------------------
+
+model EntreeAudit {
+  id             String      @id @default(cuid())
+  action         ActionAudit
+  entite         String      @db.VarChar(100)  // 'Personnel', 'Unite', 'CompteUtilisateur', ...
+  entiteId       String?     @db.VarChar(100)
+  champModifie   String?     @db.VarChar(300)
+  ancienneValeur String?     @db.Text
+  nouvelleValeur String?     @db.Text
+  personnelId    String?
+  personnel      Personnel?  @relation(fields: [personnelId], references: [id])
+  compteId       String?     // auteur (null pour opérations système)
+  compte         CompteUtilisateur? @relation(fields: [compteId], references: [id])
+  details        Json?
+  ip             String?
+  dateHeure      DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+
+  @@index([personnelId])
+  @@index([compteId])
+  @@index([action])
+  @@index([dateHeure])
+}
+
+// ---------------------------------------------------------------------------
+// Import / export Excel
+// ---------------------------------------------------------------------------
+
+model ImportPersonnel {
+  id                String             @id @default(cuid())
+  compteId          String
+  compte            CompteUtilisateur  @relation(fields: [compteId], references: [id])
+  dateImport        DateTime           @default(now())
+  nomFichierSource  String             @db.VarChar(300)
+  fichierStocke     String?            @db.VarChar(500)
+  nombreLignes      Int                @default(0)
+  nombreCrees       Int                @default(0)
+  nombreMisesAJour  Int                @default(0)
+  nombreErrors      Int                @default(0)
+  statut            StatutImport
+  lignes            LigneImport[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([compteId])
+  @@index([dateImport])
+}
+
+model LigneImport {
+  id                  String          @id @default(cuid())
+  importPersonnelId   String
+  importPersonnel     ImportPersonnel @relation(fields: [importPersonnelId], references: [id], onDelete: Cascade)
+  numeroLigne         Int
+  statut              StatutLigneImport
+  actionAppliquee     ActionImport?
+  messageErreur       String?         @db.VarChar(1000)
+  personnelId         String?
+  personnel           Personnel?      @relation(fields: [personnelId], references: [id])
+  donnees             Json?           // données brutes lues dans le fichier
+  createdAt           DateTime        @default(now())
+
+  @@index([importPersonnelId])
+  @@index([personnelId])
+}
